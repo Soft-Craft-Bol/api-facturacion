@@ -1,52 +1,44 @@
-const axios = require('axios');
-const xml2js = require('xml2js');
-
-const siatEndpoint = 'https://pilotosiatservicios.impuestos.gob.bo/v2/FacturacionCodigos';
+const soap = require('soap');
+const config = require('../config/siat.config');
 
 class SiatService {
-  static async soapRequest(operation, params) {
-    const soapBody = `
-      <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:siat="https://siat.impuestos.gob.bo/">
-        <soapenv:Header/>
-        <soapenv:Body>
-          <siat:${operation}>
-            ${params}
-          </siat:${operation}>
-        </soapenv:Body>
-      </soapenv:Envelope>
-    `;
+  constructor() {
+    this.wsdlUrl = 'https://pilotosiatservicios.impuestos.gob.bo/v2/FacturacionCodigos?wsdl';
+    this.soapOptions = {
+      forceSoap12Headers: false,
+      wsdl_headers: {
+        connection: 'keep-alive',
+        apikey: config.tokenApi // Replace with your valid token
+      }
+    };
+  }
 
+  async getCuis() {
     try {
-      const response = await axios.post(siatEndpoint, soapBody, {
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'apikey': 'TokenApi eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJHdWljaGkxLiIsImNvZGlnb1Npc3RlbWEiOiI3NzUzNTU0NkI3MTJERDQwOUQ3QTM4NyIsIm5pdCI6Ikg0c0lBQUFBQUFBQUFETTFORFUyTXpRd01EUUNBTWdwRkpRS0FBQUEiLCJpZCI6MzAxNTc4OCwiZXhwIjoxNzAzOTgwODAwLCJpYXQiOjE2OTE2MDMxMzIsIm5pdERlbGVnYWRvIjo1MTUzNjEwMDEyLCJzdWJzaXN0ZW1hIjoiU0ZFIn0.Y61q9_pZiOG49HYRQ5OfXRHvDCh1V8hoviWuA472DgV5f3CdV-MOxz9y4u07AVB-bMByebK_wskxUWXf6cliQQ',
-        },
-      });
+      const client = await soap.createClientAsync(this.wsdlUrl, this.soapOptions);
+      
+      // Set the API key in the headers for the request
+      client.addHttpHeader('apikey', config.tokenApi);
 
-      const result = await xml2js.parseStringPromise(response.data, { explicitArray: false });
-      return result['soapenv:Envelope']['soapenv:Body'];
+      const params = {
+        SolicitudCuis: {
+          codigoAmbiente: 2, // 2 for testing environment
+          codigoModalidad: 2, // 2 for Computarizada en Línea
+          codigoPuntoVenta: 0,
+          codigoSistema: config.codigoSistema, // Replace with your system code
+          codigoSucursal: 0,
+          nit: config.nit // Replace with your NIT
+        }
+      };
+
+      const result = await client.cuisAsync(params);
+      return result[0]; // SOAP response is always in an array
+      
     } catch (error) {
-      console.error('Error en la solicitud SOAP:', error.message);
-      throw new Error('Error al comunicarse con el servicio SIAT.');
+      console.error('Error getting CUIS:', error);
+      throw new Error('Failed to get CUIS');
     }
-  }
-
-  static async verificarNit({ codigoAmbiente, codigoSistema, nit, codigoModalidad, codigoSucursal, nitParaVerificacion }) {
-    const params = `
-      <codigoAmbiente>${codigoAmbiente}</codigoAmbiente>
-      <codigoSistema>${codigoSistema}</codigoSistema>
-      <nit>${nit}</nit>
-      <codigoModalidad>${codigoModalidad}</codigoModalidad>
-      <codigoSucursal>${codigoSucursal}</codigoSucursal>
-      <nitParaVerificacion>${nitParaVerificacion}</nitParaVerificacion>
-    `;
-    return this.soapRequest('verificarNit', params);
-  }
-
-  static async verificarComunicacion() {
-    return this.soapRequest('verificarComunicacion', '');
   }
 }
 
-module.exports = SiatService;
+module.exports = new SiatService();
